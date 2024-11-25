@@ -1,0 +1,69 @@
+version: 2
+
+project_name: gorp
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: gorp
+    main: ./main.go
+    binary: gorp-{{ .Os}}-{{ .Arch}}
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -v
+    ldflags:
+      - -X github.com/pamelia/gorp/common.version={{ .Version }}
+      - -X github.com/pamelia/gorp/common.buildDate={{ .Date }}
+      - -X github.com/pamelia/gorp/common.gitCommit={{ .FullCommit }}
+      - -extldflags="-static"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+checksum:
+  name_template: 'cli_checksums.txt'
+  algorithm: sha256
+
+release:
+  prerelease: auto
+  draft: false
+  header: |
+    **Full Changelog**: https://github.com/argoproj/argo-cd/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+changelog:
+  use:
+    github
+  sort: asc
+  abbrev: 0
+  groups: # Regex use RE2 syntax as defined here: https://github.com/google/re2/wiki/Syntax.
+    - title: 'Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 100
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 200
+    - title: 'Documentation'
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 300
+    - title: 'Dependency updates'
+      regexp: '^.*?(feat|fix|chore)\(deps?.+\)!?:.+$'
+      order: 400
+    - title: 'Other work'
+      order: 999
+  filters:
+    exclude:
+      - '^test:'
+      - '^.*?Bump(\([[:word:]]+\))?.+$'
+      - '^.*?\[Bot\](\([[:word:]]+\))?.+$'
+
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json

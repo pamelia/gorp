@@ -1,0 +1,42 @@
+name: Publish Gorp Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+env:
+  GOLANG_VERSION: '1.23.3'
+
+jobs:
+  goreleaser:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch all tags
+        run: git fetch --force --tags
+
+      - name: Setup Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GOLANG_VERSION }}
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        id: run-goreleaser
+        with:
+          version: latest
+          args: release --clean --timeout 5m
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
