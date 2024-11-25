@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"github.com/pamelia/gorp/pkg/config"
 	"github.com/pamelia/gorp/pkg/logger"
@@ -11,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -53,13 +51,9 @@ func startListener(listenCfg config.ListenConfig) error {
 	}
 
 	// Load CA certificate to verify client certificates
-	caCert, err := os.ReadFile(listenCfg.TLSCACert)
+	caCertPool, err := pki.GetCACertPool(listenCfg.TLSCACert)
 	if err != nil {
-		return fmt.Errorf("failed to read CA cert: %w", err)
-	}
-	caCertPool := x509.NewCertPool()
-	if !caCertPool.AppendCertsFromPEM(caCert) {
-		return fmt.Errorf("failed to append CA cert")
+		return fmt.Errorf("failed to get CA cert pool: %v", err)
 	}
 
 	tlsConfig := &tls.Config{
