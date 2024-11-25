@@ -1,5 +1,3 @@
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pamelia/gorp/badge)](https://scorecard.dev/viewer/?uri=github.com/pamelia/gorp)
-
 # Go Reverse Proxy
 A simple reverse proxy written in Go.
 
