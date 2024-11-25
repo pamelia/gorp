@@ -1,3 +1,4 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/pamelia/gorp)](https://goreportcard.com/report/github.com/pamelia/gorp)
 # Go Reverse Proxy
 A simple reverse proxy written in Go.
 
