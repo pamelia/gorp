@@ -38,7 +38,7 @@ release:
   prerelease: auto
   draft: false
   header: |
-    **Full Changelog**: https://github.com/argoproj/argo-cd/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/pamelia/gorp/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 changelog:
   use:
