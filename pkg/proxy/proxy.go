@@ -6,6 +6,7 @@ import (
 	"github.com/pamelia/gorp/pkg/config"
 	"github.com/pamelia/gorp/pkg/logger"
 	"github.com/pamelia/gorp/pkg/pki"
+	"go.uber.org/zap"
 	"log"
 	"net"
 	"net/http"
@@ -15,6 +16,59 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	size       int
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
+}
+
+func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
+	if lrw.statusCode == 0 {
+		lrw.statusCode = http.StatusOK
+	}
+	n, err := lrw.ResponseWriter.Write(b)
+	lrw.size += n
+	return n, err
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		lrw := &loggingResponseWriter{ResponseWriter: w}
+
+		// Pass the request to the next handler
+		next.ServeHTTP(lrw, r)
+
+		// After the handler returns, log the request details
+		duration := time.Since(start)
+
+		// Extract client IP address
+		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			clientIP = r.RemoteAddr
+		}
+		if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+			clientIP = ip
+		}
+
+		logger.Logger.Info("HTTP request",
+			zap.String("client_ip", clientIP),
+			zap.String("method", r.Method),
+			zap.String("uri", r.RequestURI),
+			zap.String("protocol", r.Proto),
+			zap.Int("status", lrw.statusCode),
+			zap.Int("size", lrw.size),
+			zap.String("user_agent", r.UserAgent()),
+			zap.Duration("duration", duration),
+		)
+	})
+}
 
 func Start(configPath string) {
 	sugar := logger.Logger.Sugar()
@@ -71,7 +125,7 @@ func startListener(listenCfg config.ListenConfig) error {
 	proxy := newReverseProxy(listenCfg.Backends)
 
 	server := &http.Server{
-		Handler:      proxy,
+		Handler:      loggingMiddleware(proxy),
 		TLSConfig:    tlsConfig,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -128,6 +182,12 @@ func newReverseProxy(backends []config.BackendConfig) *httputil.ReverseProxy {
 			ResponseHeaderTimeout: 10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 			ForceAttemptHTTP2:     true,
+
+			// Set the DialContext with a custom timeout
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 60 * time.Second,
+			}).DialContext,
 		}
 
 		if backend.Scheme == "https" {
@@ -167,9 +227,6 @@ func newReverseProxy(backends []config.BackendConfig) *httputil.ReverseProxy {
 		req.URL.Host = net.JoinHostPort(backend.Address, strconv.Itoa(backend.Port))
 		// Update the Host header if necessary
 		req.Host = req.URL.Host
-
-		sugar.Infof("Proxying request for %s to %s://%s %s %s", req.RemoteAddr, req.URL.Scheme, req.URL.Host,
-			req.Method, req.RequestURI)
 
 	}
 
