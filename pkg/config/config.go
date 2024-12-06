@@ -12,8 +12,14 @@ type Config struct {
 
 // ListenConfig represents the configuration for each listener
 type ListenConfig struct {
-	Address   string          `yaml:"address"`
-	Port      int             `yaml:"port"`
+	Address      string              `yaml:"address"`
+	Port         int                 `yaml:"port"`
+	VirtualHosts []VirtualHostConfig `yaml:"virtual_hosts"`
+}
+
+// VirtualHostConfig represents the configuration for each virtual host
+type VirtualHostConfig struct {
+	Hostname  string          `yaml:"hostname"`
 	TLSCACert string          `yaml:"tls_ca_cert"`
 	TLSCert   string          `yaml:"tls_cert"`
 	TLSKey    string          `yaml:"tls_key"`
