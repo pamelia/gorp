@@ -1,12 +1,22 @@
 listens:
   - address: "192.168.1.10"
     port: 8443
-    tls_ca_cert: "ca.pem"
-    tls_cert: "server.pem"
-    tls_key: "server-key.pem"
-    backends:
-      - address: "172.20.123.4"
-        port: 443
-        scheme: "https"
-        skip_verify_tls_cert: false
-        tls_ca_cert: "backend-ca.pem"
+    virtual_hosts:
+      - hostname: "example.com"
+        tls_cert: "example_com_cert.pem"
+        tls_key: "example_com_key.pem"
+        tls_ca_cert: "ca.pem"
+        backends:
+          - address: "192.168.100.1"
+            port: 8080
+            scheme: "http"
+      - hostname: "another-example.com"
+        tls_cert: "another_example_com_cert.pem"
+        tls_key: "another_example_com_key.pem"
+        tls_ca_cert: "ca.pem"
+        backends:
+          - address: "192.168.100.2"
+            port: 443
+            scheme: "https"
+            skip_verify_tls_cert: false
+            tls_ca_cert: "backend-ca.pem"

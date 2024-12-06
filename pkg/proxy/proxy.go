@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"github.com/pamelia/gorp/pkg/config"
 	"github.com/pamelia/gorp/pkg/logger"
@@ -98,34 +99,67 @@ func startListener(listenCfg config.ListenConfig) error {
 	sugar := logger.Logger.Sugar()
 	sugar.Infof("Starting listener on %s:%d", listenCfg.Address, listenCfg.Port)
 
-	// Load server certificate and key
-	cert, err := tls.LoadX509KeyPair(listenCfg.TLSCert, listenCfg.TLSKey)
-	if err != nil {
-		return fmt.Errorf("failed to load server cert/key: %w", err)
+	// Map to store TLS certificates for each virtual host
+	tlsCertMap := make(map[string]tls.Certificate)
+	for _, vh := range listenCfg.VirtualHosts {
+		cert, err := tls.LoadX509KeyPair(vh.TLSCert, vh.TLSKey)
+		if err != nil {
+			return fmt.Errorf("failed to load cert for %s: %w", vh.Hostname, err)
+		}
+		sugar.Infof("Certificate for %s loaded, Subject: %s", vh.Hostname, cert.Leaf.Subject)
+		tlsCertMap[vh.Hostname] = cert
 	}
 
-	// Load CA certificate to verify client certificates
-	caCertPool, err := pki.GetCACertPool(listenCfg.TLSCACert)
-	if err != nil {
-		return fmt.Errorf("failed to get CA cert pool: %v", err)
+	// Map to store TLS CA certificates for each virtual host
+	caCertPoolMap := make(map[string]*x509.CertPool)
+	for _, vh := range listenCfg.VirtualHosts {
+		caCertPool, err := pki.GetCACertPool(vh.TLSCACert)
+		if err != nil {
+			return fmt.Errorf("failed to get CA cert pool for %s: %w", vh.Hostname, err)
+		}
+		caCertPoolMap[vh.Hostname] = caCertPool
 	}
 
+	// Configure TLS with SNI support
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientCAs:    caCertPool,
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		MinVersion:   tls.VersionTLS13,
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		GetConfigForClient: func(info *tls.ClientHelloInfo) (*tls.Config, error) {
+			return &tls.Config{
+				Certificates: []tls.Certificate{tlsCertMap[info.ServerName]},
+				ClientCAs:    caCertPoolMap[info.ServerName],
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				MinVersion:   tls.VersionTLS13,
+				CipherSuites: []uint16{
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				},
+			}, nil
 		},
 	}
 
-	// Prepare the reverse proxy with round-robin load balancing
-	proxy := newReverseProxy(listenCfg.Backends)
+	// Create a map of reverse proxies for each virtual host
+	proxies := make(map[string]http.Handler)
+	for _, vh := range listenCfg.VirtualHosts {
+		sugar.Infof("Creating reverse proxy for %s", vh.Hostname)
+		proxies[vh.Hostname] = loggingMiddleware(newReverseProxy(vh.Backends))
+	}
+	sugar.Infof("Reverse proxies created for %d virtual hosts", len(proxies))
 
+	// Create the main HTTP handler
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		if proxy, ok := proxies[host]; ok {
+			proxy.ServeHTTP(w, r)
+		} else {
+			http.Error(w, fmt.Sprintf("No reverse proxy found for %s", r.Host), http.StatusNotFound)
+		}
+	})
+
+	// Create the HTTP server
 	server := &http.Server{
-		Handler:      loggingMiddleware(proxy),
+		Handler:      handler,
 		TLSConfig:    tlsConfig,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
